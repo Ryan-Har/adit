@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 
+	"encoding/base64"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
 )
@@ -14,24 +15,24 @@ import (
 type Socket struct {
 	*websocket.Conn
 	channel
+	*ConnectionItems
 }
 
 type channel struct {
 	receiveChan chan *Message
 }
 
-var Phrase string
+type ConnectionItems struct {
+	offerSDP  webrtc.SessionDescription
+	answerSDP webrtc.SessionDescription
+	Phrase    string
+}
 
 type Message struct {
 	MessageType string `json:"messagetype"`
 	Phrase      string `json:"phrase"`
 	Content     any    `json:"content"`
 }
-
-// type Connection struct {
-// 	offerSDP  webrtc.SessionDescription
-// 	answerSDP webrtc.SessionDescription
-// }
 
 var SDPTypeMap = map[string]webrtc.SDPType{
 	"answer": webrtc.SDPTypeAnswer,
@@ -55,6 +56,7 @@ func WebsocketConnect(url url.URL) (*Socket, error) {
 	s := &Socket{
 		conn,
 		*chans,
+		&ConnectionItems{},
 	}
 
 	if err := s.ping(); err != nil {
@@ -114,44 +116,28 @@ func (s *Socket) handleReceives() {
 	}
 }
 
-func (s *Socket) GetMessage() *Message {
-	return <-s.receiveChan
-}
-
 func (s *Socket) SendWebrtcSessionDescription(sdp *webrtc.SessionDescription) error {
 	msg := &Message{
 		MessageType: sdp.Type.String(),
-		Phrase:      Phrase,
+		Phrase:      s.Phrase,
 		Content:     sdp.SDP,
 	}
 	return s.marshalAndSend(msg)
 }
 
 func (s *Socket) SendIceCandidate(ic *webrtc.ICECandidate) error {
+	candidateJson := ic.ToJSON()
+	candidateStr, err := json.Marshal(candidateJson)
+	encoded := base64.StdEncoding.EncodeToString([]byte(candidateStr))
+	if err != nil {
+		return err
+	}
 	msg := &Message{
 		MessageType: "ice candidate",
-		Phrase:      Phrase,
-		Content:     ic.ToJSON().Candidate,
+		Phrase:      s.Phrase,
+		Content:     encoded,
 	}
 	return s.marshalAndSend(msg)
-}
-
-func (s *Socket) GetMessageWithExpectedType(msgType string) (*Message, bool) {
-	msg := s.GetMessage()
-	if msgType == "error" && msg.MessageType == "error" {
-		return msg, true
-	}
-
-	if msg.MessageType == "error" {
-		slog.Error("got message which had error", "message content", msg.Content)
-		return msg, false
-	}
-
-	if msg.MessageType != msgType {
-		return msg, false
-	}
-
-	return msg, true
 }
 
 func (s *Socket) marshalAndSend(msg *Message) error {
@@ -170,7 +156,7 @@ func (s *Socket) marshalAndSend(msg *Message) error {
 func (s *Socket) GetOffer() error {
 	message := &Message{
 		MessageType: "get offer",
-		Phrase:      Phrase,
+		Phrase:      s.Phrase,
 	}
 
 	jsonBytes, err := json.Marshal(message)
@@ -185,8 +171,47 @@ func (s *Socket) GetOffer() error {
 	return nil
 }
 
+func (s *Socket) HandleIncomingMessages(peerConn *WebrtcConn) {
+	for {
+		msg := <-s.receiveChan
+		switch msg.MessageType {
+		case "phrase create":
+			s.Phrase = msg.Phrase
+			//notify user so it can be sent to sender
+			fmt.Println("Phrase generated for file transfer:", msg.Phrase)
+		case "answer":
+			answerSDP, err := msg.toSessionDescription()
+			if err != nil {
+				slog.Error(err.Error())
+			}
+			s.answerSDP = *answerSDP
+			if err := peerConn.SetRemoteDescription(*answerSDP); err != nil {
+				slog.Error("unable to set remote description", "error", err.Error())
+			}
+		case "offer":
+			offerSDP, err := msg.toSessionDescription()
+			if err != nil {
+				slog.Error(err.Error())
+			}
+			if err := peerConn.SetRemoteDescription(*offerSDP); err != nil {
+				slog.Error("unable to set remote description", "error", err.Error())
+			}
+			s.offerSDP = *offerSDP
+		case "ice candidate":
+			candidate, err := msg.toIceCandidate()
+			if err != nil {
+				slog.Error("error getting ice candidate", "error", err)
+			}
+			peerConn.AddICECandidate(*candidate)
+		case "error":
+			slog.Error("error occured when establising connection to peer, please try again")
+		}
+
+	}
+}
+
 // this assumes it's a valid SDP
-func (m *Message) ToSessionDescription() (*webrtc.SessionDescription, error) {
+func (m *Message) toSessionDescription() (*webrtc.SessionDescription, error) {
 	sdpString, ok := m.Content.(string)
 	if !ok {
 		return nil, errors.New("error reading the sdp string from response")
@@ -198,14 +223,20 @@ func (m *Message) ToSessionDescription() (*webrtc.SessionDescription, error) {
 	}, nil
 }
 
-func (m *Message) ToIceCandidate() (*webrtc.ICECandidateInit, error) {
+func (m *Message) toIceCandidate() (*webrtc.ICECandidateInit, error) {
 	iceString, ok := m.Content.(string)
 	if !ok {
-		return nil, errors.New("error reading the sdp string from response")
+		return nil, errors.New("error reading the candidate string from response")
 	}
+
+	decoded, err := base64.StdEncoding.DecodeString(iceString)
+	if err != nil {
+		return nil, err
+	}
+
 	var candidate webrtc.ICECandidateInit
 
-	err := json.Unmarshal([]byte(iceString), &candidate)
+	err = json.Unmarshal([]byte(decoded), &candidate)
 	if err != nil {
 		return nil, err
 	}

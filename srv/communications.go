@@ -96,7 +96,6 @@ func (p *Peer) handleTextMessage(message []byte) {
 				SDP:  sdpString,
 			},
 		}
-		p.sendSuccess()
 
 		p.sendMessage(&Message{
 			MessageType: "phrase create",
@@ -142,11 +141,6 @@ func (p *Peer) handleTextMessage(message []byte) {
 			SDP:  sdpString,
 		}
 
-		p.sendMessage(&Message{
-			MessageType: "success",
-			Content:     "successfully added answer sdp",
-		})
-
 		ongoingSessions[msg.Phrase].PeerSender.sendMessage(&Message{
 			MessageType: "answer",
 			Phrase:      msg.Phrase,
@@ -168,12 +162,14 @@ func (p *Peer) handleTextMessage(message []byte) {
 		// })
 
 		if ongoingSessions[msg.Phrase].PeerSender == *p {
+			fmt.Println("sending candidate to collector")
 			ongoingSessions[msg.Phrase].PeerCollector.sendMessage(msg)
 		} else {
-			p.sendMessage(msg)
+			fmt.Println("sending candidate to sender")
+			ongoingSessions[msg.Phrase].PeerSender.sendMessage(msg)
 		}
+		return
 	}
-
 	p.sendMessage(&Message{
 		MessageType: "error",
 		Content:     fmt.Errorf("Message type %v is not understood", msg.MessageType),
