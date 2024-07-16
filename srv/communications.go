@@ -24,10 +24,31 @@ type Peers struct {
 
 type Peer struct {
 	*websocket.Conn
+	Phrase string
 }
 
 func (p *Peer) handleConnection() {
-	defer p.Close()
+	defer func() {
+		p.Close()
+		peers, ok := ongoingSessions[p.Phrase]
+		if !ok {
+			fmt.Println("session already removed")
+			return // Session already removed
+		}
+		blankPeer := Peer{}
+
+		if peers.PeerSender == *p {
+			peers.PeerSender = blankPeer
+		} else {
+			peers.PeerCollector = blankPeer
+		}
+
+		// // Check if it's the last peer in the session
+		if peers.PeerSender == blankPeer && peers.PeerCollector == blankPeer {
+			delete(ongoingSessions, p.Phrase)
+		}
+	}()
+
 	for {
 		// Read message
 		messageType, message, err := p.ReadMessage()
@@ -43,8 +64,6 @@ func (p *Peer) handleConnection() {
 			slog.Info("message received from", "remoteddr", p.RemoteAddr())
 			p.handleTextMessage(message)
 			slog.Info("response generated for", "remoteaddr", p.RemoteAddr())
-		case websocket.BinaryMessage:
-			slog.Info("message received from", "remoteddr", p.RemoteAddr())
 		}
 	}
 
@@ -89,6 +108,7 @@ func (p *Peer) handleTextMessage(message []byte) {
 			return
 		}
 
+		p.Phrase = words
 		ongoingSessions[words] = &Peers{
 			PeerSender: *p,
 			OfferSdp: webrtc.SessionDescription{
@@ -111,6 +131,15 @@ func (p *Peer) handleTextMessage(message []byte) {
 			})
 			return
 		}
+		_, ok := ongoingSessions[msg.Phrase]
+		if !ok {
+			p.sendMessage(&Message{
+				MessageType: "error",
+				Content:     errors.New("phrase does not exist"),
+			})
+			return
+		}
+		p.Phrase = msg.Phrase
 		ongoingSessions[msg.Phrase].PeerCollector = *p
 		p.sendMessage(&Message{
 			MessageType: "offer",
@@ -156,11 +185,6 @@ func (p *Peer) handleTextMessage(message []byte) {
 			return
 		}
 
-		// p.sendMessage(&Message{
-		// 	MessageType: "success",
-		// 	Content:     "successfully added answer sdp",
-		// })
-
 		if ongoingSessions[msg.Phrase].PeerSender == *p {
 			fmt.Println("sending candidate to collector")
 			ongoingSessions[msg.Phrase].PeerCollector.sendMessage(msg)
@@ -174,13 +198,6 @@ func (p *Peer) handleTextMessage(message []byte) {
 		MessageType: "error",
 		Content:     fmt.Errorf("Message type %v is not understood", msg.MessageType),
 	})
-}
-
-func (p *Peer) sendSuccess() {
-	msg := &Message{
-		MessageType: "success",
-	}
-	p.sendMessage(msg)
 }
 
 func (p *Peer) sendMessage(m *Message) {

@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-
 	"github.com/pion/webrtc/v3"
 	"log/slog"
+	//"time"
 )
 
 type WebrtcConn struct {
@@ -89,7 +89,7 @@ func (c *WebrtcConn) CreateAnswer() (*webrtc.SessionDescription, error) {
 	return &answer, nil
 }
 
-func (c *WebrtcConn) LogChanges() {
+func (c *WebrtcConn) HandleChanges(ws *Socket) {
 	// Log ICE connection state changes
 	c.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		slog.Info("ICE Connection State has changed", "state", state.String())
@@ -103,6 +103,10 @@ func (c *WebrtcConn) LogChanges() {
 	// Log connection state changes
 	c.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		slog.Info("PeerConnection State has changed", "state", state.String())
+		if state == webrtc.PeerConnectionStateConnected {
+			//cleanup websocket connection
+			ws.Close()
+		}
 		if state == webrtc.PeerConnectionStateFailed {
 			slog.Error("Unable to establish connection to peer")
 		}

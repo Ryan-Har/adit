@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	//"time"
 )
 
 var upgrader = websocket.Upgrader{
@@ -66,13 +65,4 @@ func main() {
 	http.HandleFunc("/ws", wsUpgrade)
 	fmt.Println("Server listening on port 8080")
 	http.ListenAndServe(":8080", nil)
-
-	//ticker := time.NewTicker(time.Second)
-
-	// for {
-	// 	<-ticker.C
-	// 	for _, v := range ongoingSessions {
-	// 		fmt.Println(v)
-	// 	}
-	// }
 }

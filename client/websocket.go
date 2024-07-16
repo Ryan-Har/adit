@@ -14,12 +14,7 @@ import (
 
 type Socket struct {
 	*websocket.Conn
-	channel
 	*ConnectionItems
-}
-
-type channel struct {
-	receiveChan chan *Message
 }
 
 type ConnectionItems struct {
@@ -49,21 +44,14 @@ func WebsocketConnect(url url.URL) (*Socket, error) {
 		return nil, fmt.Errorf("error dialling, %w", err)
 	}
 
-	chans := &channel{
-		receiveChan: make(chan *Message),
-	}
-
 	s := &Socket{
 		conn,
-		*chans,
 		&ConnectionItems{},
 	}
 
 	if err := s.ping(); err != nil {
 		return nil, err
 	}
-
-	go s.handleReceives()
 
 	return s, nil
 }
@@ -99,21 +87,6 @@ func (s *Socket) ping() error {
 	}
 
 	return nil
-}
-
-func (s *Socket) handleReceives() {
-	for {
-		_, receivedMessage, err := s.ReadMessage()
-		if err != nil {
-			slog.Error("Error reading message", "error", err.Error())
-		}
-		msg := &Message{}
-		err = json.Unmarshal(receivedMessage, &msg)
-		if err != nil {
-			slog.Error("Error unmarshalling message", "error", err.Error())
-		}
-		s.receiveChan <- msg
-	}
 }
 
 func (s *Socket) SendWebrtcSessionDescription(sdp *webrtc.SessionDescription) error {
@@ -173,7 +146,17 @@ func (s *Socket) GetOffer() error {
 
 func (s *Socket) HandleIncomingMessages(peerConn *WebrtcConn) {
 	for {
-		msg := <-s.receiveChan
+		_, receivedMessage, err := s.ReadMessage()
+		if err != nil {
+			slog.Error("Error reading message", "error", err.Error())
+			break
+		}
+		msg := &Message{}
+		err = json.Unmarshal(receivedMessage, &msg)
+		if err != nil {
+			slog.Error("Error unmarshalling message", "error", err.Error())
+		}
+
 		switch msg.MessageType {
 		case "phrase create":
 			s.Phrase = msg.Phrase
@@ -206,7 +189,6 @@ func (s *Socket) HandleIncomingMessages(peerConn *WebrtcConn) {
 		case "error":
 			slog.Error("error occured when establising connection to peer, please try again")
 		}
-
 	}
 }
 

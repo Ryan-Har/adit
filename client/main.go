@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/pion/webrtc/v3"
 	"log/slog"
 	"os"
+	//"time"
+
+	"github.com/pion/webrtc/v3"
 )
 
 type action string
@@ -24,6 +26,7 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: flags.logLevel})))
 
 	establishConnection(flags)
+	select {}
 }
 
 func establishConnection(flags *Flags) {
@@ -41,23 +44,23 @@ func establishConnection(flags *Flags) {
 	if err != nil {
 		slog.Error("unable to initialise websocket connection", "error", err.Error())
 	}
-	defer ws.Close()
+	//defer ws.Close()
 
 	rtc, err := CreatePeerConnection()
 	if err != nil {
 		slog.Error("unable to create peer connection", "error", err.Error())
 	}
-	defer rtc.Close()
+	//defer rtc.Close()
 
 	rtcDataChan, err := rtc.CreateDataChannel()
 	if err != nil {
 		slog.Error("unable to create data channel", "error", err.Error())
 	}
-	defer rtcDataChan.Close()
+	//defer rtcDataChan.Close()
 
 	go ws.HandleIncomingMessages(rtc)
 
-	rtc.LogChanges()
+	rtc.HandleChanges(ws)
 	rtc.HandleDataChannel()
 
 	switch runType {
@@ -76,6 +79,17 @@ func establishConnection(flags *Flags) {
 			if ws.answerSDP.SDP != "" {
 				break
 			}
+		}
+
+		//wait for ready state before sending messages
+		for {
+			if rtcDataChan.ReadyState() == webrtc.DataChannelStateOpen {
+				break
+			}
+		}
+
+		if err := rtcDataChan.SendText("i want to send you a file please"); err != nil {
+			fmt.Println("error sending text. Err:", err.Error())
 		}
 
 	case Collector:
@@ -107,7 +121,5 @@ func establishConnection(flags *Flags) {
 			ws.SendIceCandidate(candidate)
 		}
 	})
-
-	select {}
 
 }
