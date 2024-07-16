@@ -43,9 +43,32 @@ func inputOperations(flags *Flags) {
 	}
 	defer rtc.Close()
 
-	rtc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
-		fmt.Println("connection state change", rtc.ConnectionState())
+	// Log ICE connection state changes
+	rtc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		fmt.Printf("ICE Connection State has changed: %s\n", state.String())
 	})
+
+	// Log signaling state changes
+	rtc.OnSignalingStateChange(func(state webrtc.SignalingState) {
+		fmt.Printf("Signaling State has changed: %s\n", state.String())
+	})
+
+	// Log connection state changes
+	rtc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		fmt.Printf("PeerConnection State has changed: %s\n", state.String())
+		if state == webrtc.PeerConnectionStateFailed {
+			fmt.Println("Connection has failed. Additional debugging information may be needed.")
+		}
+	})
+
+	// Log ICE candidate gathering state changes
+	rtc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
+		fmt.Printf("ICE Gathering State has changed: %s\n", state.String())
+	})
+
+	// rtc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
+	// 	fmt.Println("connection state change", rtc.ConnectionState())
+	// })
 
 	rtcDataChan, err := rtc.CreateDataChannel()
 	if err != nil {
@@ -93,18 +116,18 @@ func inputOperations(flags *Flags) {
 		slog.Error("unable to set remote description", "error", err.Error())
 	}
 
-	fmt.Println("running ice candidate in goroutine")
+	// fmt.Println("running ice candidate in goroutine")
 	go rtc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate != nil {
 			ws.SendIceCandidate(candidate)
 		}
 	})
-	fmt.Println("ice candidate go routine running, waiting for ice candidate message")
+	// fmt.Println("ice candidate go routine running, waiting for ice candidate message")
 
-	fmt.Println("ice gathering state", rtc.ICEGatheringState())
-	fmt.Println("current local description", rtc.CurrentLocalDescription())
-	fmt.Println("current remote description", rtc.CurrentRemoteDescription())
-	fmt.Println()
+	// fmt.Println("ice gathering state", rtc.ICEGatheringState())
+	// fmt.Println("current local description", rtc.CurrentLocalDescription())
+	// fmt.Println("current remote description", rtc.CurrentRemoteDescription())
+	// fmt.Println()
 
 	iceCandidateMsg, ok := ws.GetMessageWithExpectedType("ice candidate")
 	if !ok {
@@ -140,6 +163,29 @@ func collectOperations(flags *Flags) {
 		slog.Error("unable to create peer connection", "error", err.Error())
 	}
 	defer rtc.Close()
+
+	// Log ICE connection state changes
+	rtc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		fmt.Printf("ICE Connection State has changed: %s\n", state.String())
+	})
+
+	// Log signaling state changes
+	rtc.OnSignalingStateChange(func(state webrtc.SignalingState) {
+		fmt.Printf("Signaling State has changed: %s\n", state.String())
+	})
+
+	// Log connection state changes
+	rtc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		fmt.Printf("PeerConnection State has changed: %s\n", state.String())
+		if state == webrtc.PeerConnectionStateFailed {
+			fmt.Println("Connection has failed. Additional debugging information may be needed.")
+		}
+	})
+
+	// Log ICE candidate gathering state changes
+	rtc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
+		fmt.Printf("ICE Gathering State has changed: %s\n", state.String())
+	})
 
 	rtc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
 		fmt.Println("connection state change", rtc.ConnectionState())
@@ -186,17 +232,11 @@ func collectOperations(flags *Flags) {
 		slog.Error("got message with unexpected type")
 	}
 
-	fmt.Println("running ice candidate in goroutine")
 	go rtc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate != nil {
 			ws.SendIceCandidate(candidate)
 		}
 	})
-	fmt.Println("ice candidate go routine running, waiting for ice candidate message")
-
-	fmt.Println("ice gathering state", rtc.ICEGatheringState())
-	fmt.Println("current local description", rtc.CurrentLocalDescription())
-	fmt.Println("current remote description", rtc.CurrentRemoteDescription())
 
 	iceCandidateMsg, ok := ws.GetMessageWithExpectedType("ice candidate")
 	if !ok {

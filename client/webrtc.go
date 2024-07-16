@@ -10,7 +10,14 @@ type WebrtcConn struct {
 }
 
 func CreatePeerConnection() (*WebrtcConn, error) {
-	config := webrtc.Configuration{}
+	config := webrtc.Configuration{
+		ICETransportPolicy: webrtc.ICETransportPolicyAll,
+		ICEServers: []webrtc.ICEServer{
+			{
+				URLs: []string{"stun:stun.l.google.com:19302"},
+			},
+		},
+	}
 	peerConnection, err := webrtc.NewPeerConnection(config)
 	if err != nil {
 		return nil, err
