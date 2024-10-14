@@ -34,26 +34,30 @@ func (c *WebrtcConn) CreateDataChannel() (*webrtc.DataChannel, error) {
 		return nil, err
 	}
 
-	dataChannel.OnOpen(func() {
-		fmt.Println("Data channel is open")
-	})
-
-	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-		fmt.Printf("Received message: %s\n", string(msg.Data))
-	})
-
 	return dataChannel, nil
 }
 
-func (c *WebrtcConn) HandleDataChannel() {
+func (c *WebrtcConn) HandleDataChannel(runType action) {
 	c.PeerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
-		d.OnOpen(func() {
-			fmt.Println("Data channel is open")
-		})
+		switch runType {
+		case Sender:
+			d.OnOpen(func() {
+				fmt.Println("Connection to collector established")
+			})
 
-		d.OnMessage(func(msg webrtc.DataChannelMessage) {
-			fmt.Printf("Received message: %s\n", string(msg.Data))
-		})
+			d.OnMessage(func(msg webrtc.DataChannelMessage) {
+				fmt.Printf("Received message: %s\n", string(msg.Data))
+			})
+		case Collector:
+			d.OnOpen(func() {
+				fmt.Println("Connection to sender established")
+			})
+
+			d.OnMessage(func(msg webrtc.DataChannelMessage) {
+				fmt.Printf("Received message: %s\n", string(msg.Data))
+			})
+		}
+
 	})
 }
 

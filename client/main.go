@@ -61,10 +61,11 @@ func establishConnection(flags *Flags) {
 	go ws.HandleIncomingMessages(rtc)
 
 	rtc.HandleChanges(ws)
-	rtc.HandleDataChannel()
 
 	switch runType {
 	case Sender:
+		rtc.HandleDataChannel(Sender)
+
 		offerSDP, err := rtc.CreateOffer()
 		if err != nil {
 			slog.Error("unable to create offer", "error", err.Error())
@@ -93,6 +94,8 @@ func establishConnection(flags *Flags) {
 		}
 
 	case Collector:
+		rtc.HandleDataChannel(Collector)
+
 		ws.Phrase = flags.CollectCode
 		if err := ws.GetOffer(); err != nil {
 			slog.Error("unable to get offer from sender", "error", err.Error())
