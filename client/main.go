@@ -32,12 +32,22 @@ func main() {
 func establishConnection(flags *Flags) {
 	var runType action
 
+	//used for dependency injection to improve performance / prevent rereads of files. Probably could be improved
+	var serialisedChunks SerialisedChunks
+
 	//TODO: Validate file / folder before making expensive network call
 	if flags.InputFile != "" {
 		runType = Sender
 	}
 	if flags.CollectCode != "" {
 		runType = Collector
+	}
+
+	if runType == Sender {
+		if _, err := readFileInChunks(flags.InputFile, flags.ChunkSize); err != nil {
+			slog.Error("unable to read provided file", "error", err.Error())
+			os.Exit(1)
+		}
 	}
 
 	ws, err := WebsocketConnect(*flags.Server)
@@ -52,20 +62,23 @@ func establishConnection(flags *Flags) {
 	}
 	//defer rtc.Close()
 
-	rtcDataChan, err := rtc.CreateDataChannel()
+	rtcDataChan, err := rtc.CreateDataChannel(runType, flags, &serialisedChunks)
 	if err != nil {
 		slog.Error("unable to create data channel", "error", err.Error())
 	}
 	//defer rtcDataChan.Close()
-
+	//rtc.HandleDataChannel(runType, flags)
 	go ws.HandleIncomingMessages(rtc)
 
 	rtc.HandleChanges(ws)
+	//HandleDataChannel(rtcDataChan, runType, flags)
+
+	//rtc.HandleDataChannel(runType, flags)
 
 	switch runType {
 	case Sender:
-		rtc.HandleDataChannel(Sender)
-
+		rtc.HandleRetransmission(rtcDataChan, flags)
+		//handleRetransmission(rtcDataChan, flags)
 		offerSDP, err := rtc.CreateOffer()
 		if err != nil {
 			slog.Error("unable to create offer", "error", err.Error())
@@ -82,21 +95,10 @@ func establishConnection(flags *Flags) {
 			}
 		}
 
-		//wait for ready state before sending messages
-		for {
-			if rtcDataChan.ReadyState() == webrtc.DataChannelStateOpen {
-				break
-			}
-		}
-
-		if err := rtcDataChan.SendText("i want to send you a file please"); err != nil {
-			fmt.Println("error sending text. Err:", err.Error())
-		}
-
 	case Collector:
-		rtc.HandleDataChannel(Collector)
-
 		ws.Phrase = flags.CollectCode
+		rtc.HandleFileReception(rtcDataChan, flags)
+		// handleFileReception(rtcDataChan, rtc, flags)
 		if err := ws.GetOffer(); err != nil {
 			slog.Error("unable to get offer from sender", "error", err.Error())
 		}
@@ -116,7 +118,6 @@ func establishConnection(flags *Flags) {
 		if err := ws.SendWebrtcSessionDescription(answerSDP); err != nil {
 			slog.Error("unable to send answer", "error", err.Error())
 		}
-
 	}
 
 	rtc.OnICECandidate(func(candidate *webrtc.ICECandidate) {

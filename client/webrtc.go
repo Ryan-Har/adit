@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/pion/webrtc/v3"
 	"log/slog"
+	"path/filepath"
+
+	"github.com/pion/webrtc/v3"
 	//"time"
 )
 
@@ -27,37 +29,83 @@ func CreatePeerConnection() (*WebrtcConn, error) {
 	return &WebrtcConn{peerConnection}, nil
 }
 
-func (c *WebrtcConn) CreateDataChannel() (*webrtc.DataChannel, error) {
+func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags, sc *SerialisedChunks) (*webrtc.DataChannel, error) {
 
 	dataChannel, err := c.PeerConnection.CreateDataChannel("dataChannel", nil)
 	if err != nil {
 		return nil, err
 	}
 
+	switch runType {
+	case Sender:
+		dataChannel.OnOpen(func() {
+			fmt.Println("Connection to collector established")
+			handleFileSending(dataChannel, flags, sc)
+		})
+	case Collector:
+		dataChannel.OnOpen(func() {
+			fmt.Println("Connection to sender established")
+		})
+	}
 	return dataChannel, nil
 }
 
-func (c *WebrtcConn) HandleDataChannel(runType action) {
+func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags) {
+	fmt.Println("handling file reception")
+	var metadata FileMetadata
+
+	//TODO: provide some kind of progress based on the number of chunks received
+	receivedChunks := make(map[int][]byte)
+
 	c.PeerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
-		switch runType {
-		case Sender:
-			d.OnOpen(func() {
-				fmt.Println("Connection to collector established")
-			})
+		d.OnMessage(func(msg webrtc.DataChannelMessage) {
+			// Assume the first message is metadata
+			if metadata.FileSize == 0 && !msg.IsString {
+				var err error
+				metadata, err = unmarshallMetadata(msg.Data)
+				if err != nil {
+					slog.Error("Error parsing metadata", "Metadata message", msg.Data, "error", err.Error())
+					return
+				}
+				fmt.Printf("receiving file: %s, size: %d bytes\n", metadata.FileName, metadata.FileSize)
+			} else if msg.IsString && string(msg.Data) == "done" { //verify file and request retransmission of chunks if required
+				if len(receivedChunks) == metadata.NumChunks {
+					path, ok := ensureDirExists("") //TODO: add path as a this as a flag
+					if !ok {
+						slog.Error("unable to write file", "path", path)
+						return
+					}
+					fp := filepath.Join(path, metadata.FileName) //TODO: add flag for filename and handle duplicates
+					if err := writeToFile(fp, receivedChunks, metadata.NumChunks); err != nil {
+						slog.Error("unable to write file", "error", err)
+						return
+					}
+				}
+				missingSeq, ok := checkForMissingChunks(receivedChunks, metadata.NumChunks)
+				if !ok {
+					if err := requestMissingChunks(d, missingSeq); err != nil {
+						slog.Error("attempting to request a retry of chunks failed", "error", err)
+						return
+					}
+				}
+			} else { //must be file chunk
+				packet, err := unmarshallFilePacket(msg.Data)
+				if err != nil {
+					slog.Error("Error parsing metadata", "Metadata message", msg.Data, "error", err.Error())
+					return
+				}
+				receivedChunks[packet.SequenceNumber] = packet.Data
+			}
 
-			d.OnMessage(func(msg webrtc.DataChannelMessage) {
-				fmt.Printf("Received message: %s\n", string(msg.Data))
-			})
-		case Collector:
-			d.OnOpen(func() {
-				fmt.Println("Connection to sender established")
-			})
+		})
+	})
+}
 
-			d.OnMessage(func(msg webrtc.DataChannelMessage) {
-				fmt.Printf("Received message: %s\n", string(msg.Data))
-			})
-		}
-
+func (c *WebrtcConn) HandleRetransmission(d *webrtc.DataChannel, flags *Flags) {
+	fmt.Println("handling file retransmission messages")
+	d.OnMessage(func(msg webrtc.DataChannelMessage) {
+		fmt.Println("readystate:", d.ReadyState())
+		fmt.Printf("Received message: %s\n", string(msg.Data))
 	})
 }
 

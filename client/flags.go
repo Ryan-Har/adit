@@ -14,12 +14,15 @@ type Flags struct {
 	CollectCode string
 	Server      *url.URL
 	logLevel    slog.Level
+	ChunkSize   int
 }
 
 func GetFlags() (*Flags, error) {
 	flags := &Flags{}
 	flag.StringVar(&flags.InputFile, "i", "", "Path to the file or folder to be sent")
 	flag.StringVar(&flags.CollectCode, "c", "", "Code provided to collect a file")
+	flag.IntVar(&flags.ChunkSize, "b", 16384, "Size of the chunks the file will be split into for sending in bytes")
+	
 	server := flag.String("s", "ws://localhost:8080/ws", "server used to relay messages")
 	verbose := flag.Bool("vvv", false, "Enable verbose mode")
 	flag.Parse()
