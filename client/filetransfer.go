@@ -28,7 +28,7 @@ type MissingPacketRequest struct {
 	MissingSequences []int `json:"missingSequences"`
 }
 
-type SerialisedChunks map[int]FilePacket
+var SerialisedChunks map[int]FilePacket
 
 func unmarshallMetadata(msgBytes []byte) (FileMetadata, error) {
 	var m FileMetadata
@@ -101,12 +101,11 @@ func sendFileMetadata(d *webrtc.DataChannel, md FileMetadata) error {
 	return nil
 }
 
-func sendChunksWithSequence(d *webrtc.DataChannel, filePath string, chunkSize int) (*SerialisedChunks, error) {
-	sc := SerialisedChunks{}
+func sendChunksWithSequence(d *webrtc.DataChannel, filePath string, chunkSize int) error {
 
 	chunks, err := readFileInChunks(filePath, chunkSize)
 	if err != nil {
-		return &sc, err
+		return err
 	}
 
 	for i, chunk := range chunks {
@@ -115,22 +114,22 @@ func sendChunksWithSequence(d *webrtc.DataChannel, filePath string, chunkSize in
 			Data:           chunk,
 		}
 
-		sc[i] = packet //used to make any retransmissions quicker
+		SerialisedChunks[i] = packet //used to make any retransmissions quicker
 
 		packetBytes, err := json.Marshal(packet)
 		if err != nil {
-			return &sc, fmt.Errorf("error serializing packet %d: %v", i, err)
+			return fmt.Errorf("error serializing packet %d: %v", i, err)
 		}
 
 		err = d.Send(packetBytes)
 		if err != nil {
-			return &sc, fmt.Errorf("error sending packet %d: %v", i, err)
+			return fmt.Errorf("error sending packet %d: %v", i, err)
 		}
 	}
-	return &sc, nil
+	return nil
 }
 
-func handleFileSending(d *webrtc.DataChannel, flags *Flags, sc *SerialisedChunks) {
+func handleFileSending(d *webrtc.DataChannel, flags *Flags) {
 	fmt.Println("handling file sending")
 	metadata, err := getFileMetadata(flags.InputFile, flags.ChunkSize)
 	if err != nil {
@@ -142,9 +141,9 @@ func handleFileSending(d *webrtc.DataChannel, flags *Flags, sc *SerialisedChunks
 	}
 
 	fp := path.Clean(flags.InputFile)
-	sc, err = sendChunksWithSequence(d, fp, flags.ChunkSize)
+	err = sendChunksWithSequence(d, fp, flags.ChunkSize)
 	if err != nil {
-		slog.Error("error sending file", "error", err.Error(), "last chunk sent", len(*sc))
+		slog.Error("error sending file", "error", err.Error(), "last chunk sent", len(SerialisedChunks))
 	}
 
 	if err = d.SendText("done"); err != nil {

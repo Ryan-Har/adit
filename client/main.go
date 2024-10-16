@@ -16,6 +16,10 @@ const (
 	Collector action = "collector"
 )
 
+func init() {
+	SerialisedChunks = make(map[int]FilePacket)
+}
+
 func main() {
 	flags, err := GetFlags()
 	if err != nil {
@@ -31,9 +35,6 @@ func main() {
 
 func establishConnection(flags *Flags) {
 	var runType action
-
-	//used for dependency injection to improve performance / prevent rereads of files. Probably could be improved
-	var serialisedChunks SerialisedChunks
 
 	//TODO: Validate file / folder before making expensive network call
 	if flags.InputFile != "" {
@@ -62,7 +63,7 @@ func establishConnection(flags *Flags) {
 	}
 	//defer rtc.Close()
 
-	rtcDataChan, err := rtc.CreateDataChannel(runType, flags, &serialisedChunks)
+	rtcDataChan, err := rtc.CreateDataChannel(runType, flags)
 	if err != nil {
 		slog.Error("unable to create data channel", "error", err.Error())
 	}

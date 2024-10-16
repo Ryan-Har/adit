@@ -29,7 +29,7 @@ func CreatePeerConnection() (*WebrtcConn, error) {
 	return &WebrtcConn{peerConnection}, nil
 }
 
-func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags, sc *SerialisedChunks) (*webrtc.DataChannel, error) {
+func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags) (*webrtc.DataChannel, error) {
 
 	dataChannel, err := c.PeerConnection.CreateDataChannel("dataChannel", nil)
 	if err != nil {
@@ -40,7 +40,7 @@ func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags, sc *Seriali
 	case Sender:
 		dataChannel.OnOpen(func() {
 			fmt.Println("Connection to collector established")
-			handleFileSending(dataChannel, flags, sc)
+			handleFileSending(dataChannel, flags)
 		})
 	case Collector:
 		dataChannel.OnOpen(func() {
