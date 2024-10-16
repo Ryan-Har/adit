@@ -22,8 +22,11 @@ func GetFlags() (*Flags, error) {
 	flag.StringVar(&flags.InputFile, "i", "", "Path to the file or folder to be sent")
 	flag.StringVar(&flags.CollectCode, "c", "", "Code provided to collect a file")
 	flag.IntVar(&flags.ChunkSize, "b", 16384, "Size of the chunks the file will be split into for sending in bytes")
-	
-	server := flag.String("s", "ws://localhost:8080/ws", "server used to relay messages")
+	//stun server
+	//output path
+	//output file name
+
+	server := flag.String("r", "ws://localhost:8080/ws", "server used to relay messages")
 	verbose := flag.Bool("vvv", false, "Enable verbose mode")
 	flag.Parse()
 

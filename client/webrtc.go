@@ -1,11 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"log/slog"
-	"path/filepath"
-
 	"github.com/pion/webrtc/v3"
+	"log/slog"
+	"path"
+	"path/filepath"
 	//"time"
 )
 
@@ -83,6 +84,7 @@ func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags) {
 				}
 				missingSeq, ok := checkForMissingChunks(receivedChunks, metadata.NumChunks)
 				if !ok {
+					slog.Info("file has missing data in sequence, requesting resend of data")
 					if err := requestMissingChunks(d, missingSeq); err != nil {
 						slog.Error("attempting to request a retry of chunks failed", "error", err)
 						return
@@ -104,8 +106,40 @@ func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags) {
 func (c *WebrtcConn) HandleRetransmission(d *webrtc.DataChannel, flags *Flags) {
 	fmt.Println("handling file retransmission messages")
 	d.OnMessage(func(msg webrtc.DataChannelMessage) {
-		fmt.Println("readystate:", d.ReadyState())
 		fmt.Printf("Received message: %s\n", string(msg.Data))
+		request, err := unmashallMissingPacketRequest(msg.Data)
+		if err != nil {
+			slog.Error("Error parsing Missing packet request", "error", err.Error())
+			return
+		}
+
+		for _, seq := range request.MissingSequences {
+			packet, ok := SerialisedChunks[seq]
+			if !ok {
+				fp := path.Clean(flags.InputFile)
+				err = sequenceFile(fp, flags.ChunkSize)
+				if err != nil {
+					slog.Error("error resequencing file", "error", err)
+					return
+				}
+				packet, ok = SerialisedChunks[seq]
+				if !ok {
+					slog.Error("rerequest of a chunk that does not exist")
+					return
+				}
+			}
+
+			packetBytes, err := json.Marshal(packet)
+			if err != nil {
+				errMsg := fmt.Sprintf("error serializing packet sequence %d: %v", seq, err)
+				slog.Error("error sending file", "error", errMsg)
+			}
+			d.Send(packetBytes)
+			slog.Info("retransmission request fulfilled", "seq", seq)
+		}
+		if err = d.SendText("done"); err != nil {
+			slog.Error("error sending done message", "error", err.Error())
+		}
 	})
 }
 

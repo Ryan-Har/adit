@@ -46,6 +46,14 @@ func unmarshallFilePacket(msgBytes []byte) (FilePacket, error) {
 	return f, nil
 }
 
+func unmashallMissingPacketRequest(msgBytes []byte) (MissingPacketRequest, error) {
+	var mp MissingPacketRequest
+	if err := json.Unmarshal(msgBytes, &mp); err != nil {
+		return MissingPacketRequest{}, err
+	}
+	return mp, nil
+}
+
 func readFileInChunks(filePath string, chunkSize int) ([][]byte, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -121,12 +129,33 @@ func sendChunksWithSequence(d *webrtc.DataChannel, filePath string, chunkSize in
 			return fmt.Errorf("error serializing packet %d: %v", i, err)
 		}
 
-		err = d.Send(packetBytes)
+		err = sendBytes(d, packetBytes)
 		if err != nil {
 			return fmt.Errorf("error sending packet %d: %v", i, err)
 		}
 	}
 	return nil
+}
+
+func sequenceFile(filePath string, chunkSize int) error {
+	chunks, err := readFileInChunks(filePath, chunkSize)
+	if err != nil {
+		return err
+	}
+
+	for i, chunk := range chunks {
+		packet := FilePacket{
+			SequenceNumber: i,
+			Data:           chunk,
+		}
+
+		SerialisedChunks[i] = packet //used to make any retransmissions quicker
+	}
+	return nil
+}
+
+func sendBytes(d *webrtc.DataChannel, b []byte) error {
+	return d.Send(b)
 }
 
 func handleFileSending(d *webrtc.DataChannel, flags *Flags) {
@@ -205,25 +234,25 @@ func handleRetransmission(d *webrtc.DataChannel, flags *Flags) {
 	fmt.Println("handling retransmissions")
 
 	d.OnMessage(func(msg webrtc.DataChannelMessage) {
-		fmt.Printf("Received message: %s\n", string(msg.Data))
-		// var request MissingPacketRequest
-		// err := json.Unmarshal(msg.Data, &request)
-		// if err != nil {
-		// 	fmt.Println("Error parsing retransmission request:", err)
-		// 	return
-		// }
+		var request MissingPacketRequest
+		err := json.Unmarshal(msg.Data, &request)
+		if err != nil {
+			fmt.Println("Error parsing retransmission request:", err)
+			return
+		}
 
-		// for _, seq := range request.MissingSequences {
-		// 	if seq >= 0 && seq < len(fileChunks) {
-		// 		packet := FilePacket{
-		// 			SequenceNumber: seq,
-		// 			Data:           fileChunks[seq],
-		// 		}
-		// 		packetBytes, _ := json.Marshal(packet)
-		// 		d.Send(packetBytes)
-		// 		fmt.Printf("Retransmitted packet %d\n", seq)
-		// 	}
-		// }
+		for _, seq := range request.MissingSequences {
+			packet, ok := SerialisedChunks[seq]
+			if !ok {
+				slog.Error("rerequest of a chunk that does not exist")
+				return
+			}
+
+			packetBytes, _ := json.Marshal(packet)
+			d.Send(packetBytes)
+			slog.Info("retransmission request fulfilled", "seq", seq)
+		}
+
 	})
 }
 

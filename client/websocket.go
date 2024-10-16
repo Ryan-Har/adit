@@ -144,6 +144,7 @@ func (s *Socket) GetOffer() error {
 	return nil
 }
 
+// TODO: fix panic that happens if server is unavailable / socket connection isnt open
 func (s *Socket) HandleIncomingMessages(peerConn *WebrtcConn) {
 	for {
 		_, receivedMessage, err := s.ReadMessage()
