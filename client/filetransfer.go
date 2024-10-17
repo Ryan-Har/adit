@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path"
-	"path/filepath"
 
 	"github.com/pion/webrtc/v3"
 	//"time"
@@ -228,49 +227,4 @@ func requestMissingChunks(d *webrtc.DataChannel, missingSequences []int) error {
 		return err
 	}
 	return nil
-}
-
-func handleRetransmission(d *webrtc.DataChannel, flags *Flags) {
-	fmt.Println("handling retransmissions")
-
-	d.OnMessage(func(msg webrtc.DataChannelMessage) {
-		var request MissingPacketRequest
-		err := json.Unmarshal(msg.Data, &request)
-		if err != nil {
-			fmt.Println("Error parsing retransmission request:", err)
-			return
-		}
-
-		for _, seq := range request.MissingSequences {
-			packet, ok := SerialisedChunks[seq]
-			if !ok {
-				slog.Error("rerequest of a chunk that does not exist")
-				return
-			}
-
-			packetBytes, _ := json.Marshal(packet)
-			d.Send(packetBytes)
-			slog.Info("retransmission request fulfilled", "seq", seq)
-		}
-
-	})
-}
-
-func ensureDirExists(dirPath string) (string, bool) {
-	cleanedPath := filepath.Clean(dirPath)
-
-	info, err := os.Stat(cleanedPath)
-	if err == nil && info.IsDir() {
-		return cleanedPath, true
-	}
-
-	return cleanedPath, false
-}
-
-func verifyDir(dirPath string) error {
-	p, ok := ensureDirExists(dirPath)
-	if ok {
-		return nil
-	}
-	return os.Mkdir(p, os.ModePerm)
 }

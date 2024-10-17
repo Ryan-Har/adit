@@ -79,7 +79,6 @@ func establishConnection(flags *Flags) {
 	switch runType {
 	case Sender:
 		rtc.HandleRetransmission(rtcDataChan, flags)
-		//handleRetransmission(rtcDataChan, flags)
 		offerSDP, err := rtc.CreateOffer()
 		if err != nil {
 			slog.Error("unable to create offer", "error", err.Error())

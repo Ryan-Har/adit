@@ -71,12 +71,7 @@ func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags) {
 				fmt.Printf("receiving file: %s, size: %d bytes\n", metadata.FileName, metadata.FileSize)
 			} else if msg.IsString && string(msg.Data) == "done" { //verify file and request retransmission of chunks if required
 				if len(receivedChunks) == metadata.NumChunks {
-					path, ok := ensureDirExists("") //TODO: add path as a this as a flag
-					if !ok {
-						slog.Error("unable to write file", "path", path)
-						return
-					}
-					fp := filepath.Join(path, metadata.FileName) //TODO: add flag for filename and handle duplicates
+					fp := filepath.Join(flags.OutputPath, metadata.FileName) //TODO: add flag for filename and handle duplicates
 					if err := writeToFile(fp, receivedChunks, metadata.NumChunks); err != nil {
 						slog.Error("unable to write file", "error", err)
 						return
