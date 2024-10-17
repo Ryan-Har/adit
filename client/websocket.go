@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
-	"strings"
 
 	"encoding/base64"
 
@@ -152,11 +151,11 @@ func (s *Socket) HandleIncomingMessages(peerConn *WebrtcConn) {
 	for {
 		_, receivedMessage, err := s.ReadMessage()
 		if err != nil {
-			if strings.Contains(err.Error(), "use of closed network connection") {
-				break
-			} else {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure) {
 				slog.Error("Error reading from websocket", "error", err.Error())
 				os.Exit(1)
+			} else {
+				break
 			}
 		}
 		msg := &Message{}

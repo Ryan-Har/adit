@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -196,7 +197,7 @@ func (c *WebrtcConn) HandleChanges(ws *Socket) {
 		slog.Info("PeerConnection State has changed", "state", state.String())
 		if state == webrtc.PeerConnectionStateConnected {
 			//cleanup websocket connection
-			ws.Close()
+			ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		}
 		if state == webrtc.PeerConnectionStateFailed {
 			slog.Error("Unable to establish connection to peer")

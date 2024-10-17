@@ -53,7 +53,11 @@ func (p *Peer) handleConnection() {
 		// Read message
 		messageType, message, err := p.ReadMessage()
 		if err != nil {
-			fmt.Println("Read error:", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure) {
+				fmt.Println("Read error:", err)
+			} else {
+				fmt.Printf("connection closed by %s\n", p.RemoteAddr().String())
+			}
 			break
 		}
 
