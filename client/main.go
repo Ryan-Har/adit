@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	//"time"
+	"sync"
 
 	"github.com/pion/webrtc/v3"
 )
@@ -29,11 +29,13 @@ func main() {
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: flags.logLevel})))
 
-	establishConnection(flags)
-	select {}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	establishConnection(flags, &wg)
+	wg.Wait()
 }
 
-func establishConnection(flags *Flags) {
+func establishConnection(flags *Flags, wg *sync.WaitGroup) {
 	var runType action
 
 	//TODO: Validate file / folder before making expensive network call
@@ -54,30 +56,24 @@ func establishConnection(flags *Flags) {
 	ws, err := WebsocketConnect(*flags.Server)
 	if err != nil {
 		slog.Error("unable to initialise websocket connection", "error", err.Error())
-		return
+		os.Exit(2)
 	}
-	//defer ws.Close()
 
 	rtc, err := CreatePeerConnection()
 	if err != nil {
 		slog.Error("unable to create peer connection", "error", err.Error())
-		return
+		os.Exit(3)
 	}
-	//defer rtc.Close()
 
-	rtcDataChan, err := rtc.CreateDataChannel(runType, flags)
+	rtcDataChan, err := rtc.CreateDataChannel(runType, flags, wg)
 	if err != nil {
 		slog.Error("unable to create data channel", "error", err.Error())
 		return
 	}
-	//defer rtcDataChan.Close()
-	//rtc.HandleDataChannel(runType, flags)
+
 	go ws.HandleIncomingMessages(rtc)
 
 	rtc.HandleChanges(ws)
-	//HandleDataChannel(rtcDataChan, runType, flags)
-
-	//rtc.HandleDataChannel(runType, flags)
 
 	switch runType {
 	case Sender:
@@ -91,7 +87,6 @@ func establishConnection(flags *Flags) {
 			slog.Error("unable to send offer", "error", err.Error())
 		}
 
-		//wait for answer to return
 		for {
 			if ws.answerSDP.SDP != "" {
 				break
@@ -100,13 +95,11 @@ func establishConnection(flags *Flags) {
 
 	case Collector:
 		ws.Phrase = flags.CollectCode
-		rtc.HandleFileReception(rtcDataChan, flags)
-		// handleFileReception(rtcDataChan, rtc, flags)
+		rtc.HandleFileReception(rtcDataChan, flags, wg)
 		if err := ws.GetOffer(); err != nil {
 			slog.Error("unable to get offer from sender", "error", err.Error())
 		}
 
-		//wait for offerSDP to return
 		for {
 			if ws.offerSDP.SDP != "" {
 				break

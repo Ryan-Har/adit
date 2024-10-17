@@ -3,11 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/pion/webrtc/v3"
 	"log/slog"
 	"path"
 	"path/filepath"
-	//"time"
+	"sync"
+
+	"github.com/pion/webrtc/v3"
 )
 
 type WebrtcConn struct {
@@ -30,7 +31,7 @@ func CreatePeerConnection() (*WebrtcConn, error) {
 	return &WebrtcConn{peerConnection}, nil
 }
 
-func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags) (*webrtc.DataChannel, error) {
+func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags, wg *sync.WaitGroup) (*webrtc.DataChannel, error) {
 
 	dataChannel, err := c.PeerConnection.CreateDataChannel("dataChannel", nil)
 	if err != nil {
@@ -43,6 +44,10 @@ func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags) (*webrtc.Da
 			fmt.Println("Connection to collector established")
 			handleFileSending(dataChannel, flags)
 		})
+		dataChannel.OnClose(func() {
+			fmt.Println("File sent, connection closed")
+			wg.Done()
+		})
 	case Collector:
 		dataChannel.OnOpen(func() {
 			fmt.Println("Connection to sender established")
@@ -51,7 +56,7 @@ func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags) (*webrtc.Da
 	return dataChannel, nil
 }
 
-func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags) {
+func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags, wg *sync.WaitGroup) {
 	var metadata FileMetadata
 
 	//TODO: provide some kind of progress based on the number of chunks received
@@ -80,6 +85,8 @@ func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags) {
 						slog.Error("unable to write file", "error", err)
 						return
 					}
+					c.PeerConnection.Close()
+					wg.Done()
 				}
 				missingSeq, ok := checkForMissingChunks(receivedChunks, metadata.NumChunks)
 				if !ok {
