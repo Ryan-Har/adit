@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
+	"strings"
 
 	"encoding/base64"
+
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
 )
@@ -149,8 +152,12 @@ func (s *Socket) HandleIncomingMessages(peerConn *WebrtcConn) {
 	for {
 		_, receivedMessage, err := s.ReadMessage()
 		if err != nil {
-			slog.Error("Error reading message", "error", err.Error())
-			break
+			if strings.Contains(err.Error(), "use of closed network connection") {
+				break
+			} else {
+				slog.Error("Error reading from websocket", "error", err.Error())
+				os.Exit(1)
+			}
 		}
 		msg := &Message{}
 		err = json.Unmarshal(receivedMessage, &msg)

@@ -54,18 +54,21 @@ func establishConnection(flags *Flags) {
 	ws, err := WebsocketConnect(*flags.Server)
 	if err != nil {
 		slog.Error("unable to initialise websocket connection", "error", err.Error())
+		return
 	}
 	//defer ws.Close()
 
 	rtc, err := CreatePeerConnection()
 	if err != nil {
 		slog.Error("unable to create peer connection", "error", err.Error())
+		return
 	}
 	//defer rtc.Close()
 
 	rtcDataChan, err := rtc.CreateDataChannel(runType, flags)
 	if err != nil {
 		slog.Error("unable to create data channel", "error", err.Error())
+		return
 	}
 	//defer rtcDataChan.Close()
 	//rtc.HandleDataChannel(runType, flags)

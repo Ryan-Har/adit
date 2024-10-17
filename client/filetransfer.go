@@ -158,7 +158,6 @@ func sendBytes(d *webrtc.DataChannel, b []byte) error {
 }
 
 func handleFileSending(d *webrtc.DataChannel, flags *Flags) {
-	fmt.Println("handling file sending")
 	metadata, err := getFileMetadata(flags.InputFile, flags.ChunkSize)
 	if err != nil {
 		slog.Error(err.Error())

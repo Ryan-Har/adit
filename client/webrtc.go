@@ -52,7 +52,6 @@ func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags) (*webrtc.Da
 }
 
 func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags) {
-	fmt.Println("handling file reception")
 	var metadata FileMetadata
 
 	//TODO: provide some kind of progress based on the number of chunks received
@@ -104,7 +103,6 @@ func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags) {
 }
 
 func (c *WebrtcConn) HandleRetransmission(d *webrtc.DataChannel, flags *Flags) {
-	fmt.Println("handling file retransmission messages")
 	d.OnMessage(func(msg webrtc.DataChannelMessage) {
 		fmt.Printf("Received message: %s\n", string(msg.Data))
 		request, err := unmashallMissingPacketRequest(msg.Data)
