@@ -46,7 +46,7 @@ func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags, wg *sync.Wa
 			handleFileSending(dataChannel, flags)
 		})
 		dataChannel.OnClose(func() {
-			fmt.Println("File sent, connection closed")
+			fmt.Println("File recipient saved file, connection closed")
 			wg.Done()
 		})
 	case Collector:
@@ -59,9 +59,7 @@ func (c *WebrtcConn) CreateDataChannel(runType action, flags *Flags, wg *sync.Wa
 
 func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags, wg *sync.WaitGroup) {
 	var metadata FileMetadata
-
-	//TODO: provide some kind of progress based on the number of chunks received
-	receivedChunks := make(map[int][]byte)
+	var bytesReceived int64
 
 	c.PeerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
 		d.OnMessage(func(msg webrtc.DataChannelMessage) {
@@ -71,39 +69,42 @@ func (c *WebrtcConn) HandleFileReception(d *webrtc.DataChannel, flags *Flags, wg
 				metadata, err = unmarshallMetadata(msg.Data)
 				if err != nil {
 					slog.Error("Error parsing metadata", "Metadata message", msg.Data, "error", err.Error())
-					return
+					wg.Done()
 				}
 				fmt.Printf("receiving file: %s, size: %d bytes\n", metadata.FileName, metadata.FileSize)
+				wg.Add(1)
+				go displayTransferPercentage(&bytesReceived, metadata.FileSize, wg)
 			} else if msg.IsString && string(msg.Data) == "done" { //verify file and request retransmission of chunks if required
-				if len(receivedChunks) == metadata.NumChunks {
+				if len(SerialisedChunks) == metadata.NumChunks {
 					var fp string
 					if flags.OutputFileName == "" {
 						fp = filepath.Join(flags.OutputPath, metadata.FileName)
 					} else {
 						fp = filepath.Join(flags.OutputPath, flags.OutputFileName)
 					}
-					if err := writeToFile(fp, receivedChunks, metadata.NumChunks); err != nil {
+					if err := writeToFile(fp, metadata.NumChunks); err != nil {
 						slog.Error("unable to write file", "error", err)
-						return
+						wg.Done()
 					}
 					c.PeerConnection.Close()
 					wg.Done()
 				}
-				missingSeq, ok := checkForMissingChunks(receivedChunks, metadata.NumChunks)
+				missingSeq, ok := checkForMissingChunks(metadata.NumChunks)
 				if !ok {
 					slog.Info("file has missing data in sequence, requesting resend of data")
 					if err := requestMissingChunks(d, missingSeq); err != nil {
 						slog.Error("attempting to request a retry of chunks failed", "error", err)
-						return
+						wg.Done()
 					}
 				}
 			} else { //must be file chunk
 				packet, err := unmarshallFilePacket(msg.Data)
 				if err != nil {
 					slog.Error("Error parsing metadata", "Metadata message", msg.Data, "error", err.Error())
-					return
+					wg.Done()
 				}
-				receivedChunks[packet.SequenceNumber] = packet.Data
+				SerialisedChunks[packet.SequenceNumber] = packet
+				bytesReceived += int64(len(packet.Data))
 			}
 
 		})
@@ -123,7 +124,7 @@ func (c *WebrtcConn) HandleRetransmission(d *webrtc.DataChannel, flags *Flags) {
 			packet, ok := SerialisedChunks[seq]
 			if !ok {
 				fp := path.Clean(flags.InputFile)
-				err = sequenceFile(fp, flags.ChunkSize)
+				err = reSequenceFile(fp, flags.ChunkSize)
 				if err != nil {
 					slog.Error("error resequencing file", "error", err)
 					return
@@ -181,7 +182,7 @@ func (c *WebrtcConn) CreateAnswer() (*webrtc.SessionDescription, error) {
 	return &answer, nil
 }
 
-func (c *WebrtcConn) HandleChanges(ws *Socket) {
+func (c *WebrtcConn) HandleChanges(ws *Socket, endWG *sync.WaitGroup) {
 	// Log ICE connection state changes
 	c.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		slog.Info("ICE Connection State has changed", "state", state.String())
@@ -201,6 +202,8 @@ func (c *WebrtcConn) HandleChanges(ws *Socket) {
 		}
 		if state == webrtc.PeerConnectionStateFailed {
 			slog.Error("Unable to establish connection to peer")
+			//close if we lose connection
+			endWG.Done()
 		}
 	})
 

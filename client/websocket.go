@@ -36,14 +36,13 @@ var SDPTypeMap = map[string]webrtc.SDPType{
 	"offer":  webrtc.SDPTypeOffer,
 }
 
-// TODO: this contains the outline of websocket client connection logic. It needs to be changed
 func WebsocketConnect(url url.URL) (*Socket, error) {
 
 	dialer := websocket.DefaultDialer
 
 	conn, _, err := dialer.Dial(url.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error dialling, %w", err)
+		return nil, fmt.Errorf("error connecting to relay server at %s", url.String())
 	}
 
 	s := &Socket{
@@ -58,7 +57,6 @@ func WebsocketConnect(url url.URL) (*Socket, error) {
 	return s, nil
 }
 
-// should only be used before channels are set up, this is why it is not exported
 func (s *Socket) ping() error {
 	msg := &Message{
 		MessageType: "ping",

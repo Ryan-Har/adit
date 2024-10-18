@@ -29,16 +29,15 @@ func main() {
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: flags.logLevel})))
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	establishConnection(flags, &wg)
-	wg.Wait()
+	var endWG sync.WaitGroup
+	endWG.Add(1)
+	establishConnection(flags, &endWG)
+	endWG.Wait()
 }
 
-func establishConnection(flags *Flags, wg *sync.WaitGroup) {
+func establishConnection(flags *Flags, endWG *sync.WaitGroup) {
 	var runType action
 
-	//TODO: Validate file / folder before making expensive network call
 	if flags.InputFile != "" {
 		runType = Sender
 	}
@@ -65,7 +64,7 @@ func establishConnection(flags *Flags, wg *sync.WaitGroup) {
 		os.Exit(3)
 	}
 
-	rtcDataChan, err := rtc.CreateDataChannel(runType, flags, wg)
+	rtcDataChan, err := rtc.CreateDataChannel(runType, flags, endWG)
 	if err != nil {
 		slog.Error("unable to create data channel", "error", err.Error())
 		return
@@ -73,7 +72,7 @@ func establishConnection(flags *Flags, wg *sync.WaitGroup) {
 
 	go ws.HandleIncomingMessages(rtc)
 
-	rtc.HandleChanges(ws)
+	rtc.HandleChanges(ws, endWG)
 
 	switch runType {
 	case Sender:
@@ -95,7 +94,7 @@ func establishConnection(flags *Flags, wg *sync.WaitGroup) {
 
 	case Collector:
 		ws.Phrase = flags.CollectCode
-		rtc.HandleFileReception(rtcDataChan, flags, wg)
+		rtc.HandleFileReception(rtcDataChan, flags, endWG)
 		if err := ws.GetOffer(); err != nil {
 			slog.Error("unable to get offer from sender", "error", err.Error())
 		}

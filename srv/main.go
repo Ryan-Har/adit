@@ -22,7 +22,6 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// TODO: Handle timeouts of sessions so that this doesn't grow forever
 var ongoingSessions = make(map[string]*Peers)
 
 func wsUpgrade(w http.ResponseWriter, r *http.Request) {

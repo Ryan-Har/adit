@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"sync"
+	"time"
 
 	"github.com/pion/webrtc/v3"
 	//"time"
@@ -27,6 +29,7 @@ type MissingPacketRequest struct {
 	MissingSequences []int `json:"missingSequences"`
 }
 
+// used by both sender and receiver to track file
 var SerialisedChunks map[int]FilePacket
 
 func unmarshallMetadata(msgBytes []byte) (FileMetadata, error) {
@@ -54,25 +57,25 @@ func unmashallMissingPacketRequest(msgBytes []byte) (MissingPacketRequest, error
 }
 
 func readFileInChunks(filePath string, chunkSize int) ([][]byte, error) {
+	var chunks [][]byte
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var chunks [][]byte
 	for {
 		chunk := make([]byte, chunkSize)
-		n, err := file.Read(chunk)
+		var n int
+		n, err = file.Read(chunk)
 		if err != nil && err != io.EOF {
-			return nil, err
+			return chunks, err
 		}
 		if n == 0 {
 			break
 		}
 		chunks = append(chunks, chunk[:n])
 	}
-
 	return chunks, nil
 }
 
@@ -108,13 +111,15 @@ func sendFileMetadata(d *webrtc.DataChannel, md FileMetadata) error {
 	return nil
 }
 
-func sendChunksWithSequence(d *webrtc.DataChannel, filePath string, chunkSize int) error {
-
+func sendChunksWithSequence(d *webrtc.DataChannel, filePath string, chunkSize int, totalBytes int64) error {
 	chunks, err := readFileInChunks(filePath, chunkSize)
 	if err != nil {
 		return err
 	}
-
+	var bytesSent int64 = 0
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go displayTransferPercentage(&bytesSent, totalBytes, &wg)
 	for i, chunk := range chunks {
 		packet := FilePacket{
 			SequenceNumber: i,
@@ -132,11 +137,13 @@ func sendChunksWithSequence(d *webrtc.DataChannel, filePath string, chunkSize in
 		if err != nil {
 			return fmt.Errorf("error sending packet %d: %v", i, err)
 		}
+		bytesSent += int64(chunkSize)
 	}
+	wg.Wait()
 	return nil
 }
 
-func sequenceFile(filePath string, chunkSize int) error {
+func reSequenceFile(filePath string, chunkSize int) error {
 	chunks, err := readFileInChunks(filePath, chunkSize)
 	if err != nil {
 		return err
@@ -168,7 +175,7 @@ func handleFileSending(d *webrtc.DataChannel, flags *Flags) {
 	}
 
 	fp := path.Clean(flags.InputFile)
-	err = sendChunksWithSequence(d, fp, flags.ChunkSize)
+	err = sendChunksWithSequence(d, fp, flags.ChunkSize, metadata.FileSize)
 	if err != nil {
 		slog.Error("error sending file", "error", err.Error(), "last chunk sent", len(SerialisedChunks))
 	}
@@ -179,7 +186,7 @@ func handleFileSending(d *webrtc.DataChannel, flags *Flags) {
 }
 
 // TODO: provide some kind of update on the screen
-func writeToFile(outputPath string, chunks map[int][]byte, totalChunks int) error {
+func writeToFile(outputPath string, totalChunks int) error {
 	file, err := os.Create(outputPath)
 	if err != nil {
 		return err
@@ -187,11 +194,10 @@ func writeToFile(outputPath string, chunks map[int][]byte, totalChunks int) erro
 	defer file.Close()
 
 	for i := 0; i < totalChunks; i++ {
-		if chunk, ok := chunks[i]; ok {
-			_, err = file.Write(chunk)
-			if err != nil {
-				return fmt.Errorf("error writing chunk %d: %v", i, err)
-			}
+		chunk := SerialisedChunks[i].Data
+		_, err = file.Write(chunk)
+		if err != nil {
+			return fmt.Errorf("error writing chunk %d: %v", i, err)
 		}
 	}
 
@@ -200,10 +206,10 @@ func writeToFile(outputPath string, chunks map[int][]byte, totalChunks int) erro
 }
 
 // returns a map of the sequence of missing chunks and true if there are no missing chunks
-func checkForMissingChunks(receivedChunks map[int][]byte, totalChunks int) ([]int, bool) {
+func checkForMissingChunks(totalChunks int) ([]int, bool) {
 	missingSeq := []int{}
 	for i := 0; i < totalChunks; i++ {
-		if _, ok := receivedChunks[i]; !ok {
+		if _, ok := SerialisedChunks[i]; !ok {
 			missingSeq = append(missingSeq, i)
 		}
 	}
@@ -226,4 +232,33 @@ func requestMissingChunks(d *webrtc.DataChannel, missingSequences []int) error {
 		return err
 	}
 	return nil
+}
+
+func displayTransferPercentage(totalBytesSent *int64, fileSize int64, wg *sync.WaitGroup) {
+	defer wg.Done()
+	timeout := 10 * time.Second
+	lastBytesSent := *totalBytesSent
+	lastUpdate := time.Now()
+
+	for {
+		progress := float64(*totalBytesSent) / float64(fileSize) * 100
+		fmt.Printf("\rFile transfer: %.2f%% complete", progress)
+
+		if *totalBytesSent >= fileSize {
+			break
+		}
+
+		if *totalBytesSent != lastBytesSent {
+			lastBytesSent = *totalBytesSent
+			lastUpdate = time.Now()
+		} else {
+			if time.Since(lastUpdate) > timeout {
+				fmt.Printf("\nLost connection to peer...\n")
+				return
+			}
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+	fmt.Printf("\nWaiting for file to be saved\n")
 }
