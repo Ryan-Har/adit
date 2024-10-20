@@ -12,13 +12,14 @@ import (
 )
 
 type Flags struct {
-	InputFile      string
-	CollectCode    string
-	Server         *url.URL
-	logLevel       slog.Level
-	ChunkSize      int
-	OutputPath     string
-	OutputFileName string
+	InputFile            string
+	CollectCode          string
+	Server               *url.URL
+	logLevel             slog.Level
+	ChunkSize            int
+	OutputPath           string
+	OutputFileName       string
+	AdditionalStunServer string
 }
 
 func GetFlags() (*Flags, error) {
@@ -28,9 +29,7 @@ func GetFlags() (*Flags, error) {
 	flag.IntVar(&flags.ChunkSize, "b", 16384, "Size of the chunks the file will be split into for sending in bytes")
 	flag.StringVar(&flags.OutputPath, "o", "", "Output path of the received file")
 	flag.StringVar(&flags.OutputFileName, "f", "", "Output file name")
-	//stun server
-	//output path
-	//output file name
+	flag.StringVar(&flags.AdditionalStunServer, "s", "", "Stun server")
 	server := flag.String("r", "ws://localhost:8080/ws", "server used to relay messages")
 	verbose := flag.Bool("vvv", false, "Enable verbose mode")
 	flag.Parse()

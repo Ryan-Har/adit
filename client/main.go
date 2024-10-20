@@ -58,7 +58,7 @@ func establishConnection(flags *Flags, endWG *sync.WaitGroup) {
 		os.Exit(2)
 	}
 
-	rtc, err := CreatePeerConnection()
+	rtc, err := CreatePeerConnection(flags.AdditionalStunServer)
 	if err != nil {
 		slog.Error("unable to create peer connection", "error", err.Error())
 		os.Exit(3)

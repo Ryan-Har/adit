@@ -185,7 +185,6 @@ func handleFileSending(d *webrtc.DataChannel, flags *Flags) {
 	}
 }
 
-// TODO: provide some kind of update on the screen
 func writeToFile(outputPath string, totalChunks int) error {
 	file, err := os.Create(outputPath)
 	if err != nil {

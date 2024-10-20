@@ -16,12 +16,23 @@ type WebrtcConn struct {
 	*webrtc.PeerConnection
 }
 
-func CreatePeerConnection() (*WebrtcConn, error) {
+func CreatePeerConnection(additionalStunServer string) (*WebrtcConn, error) {
+	stunURLs := []string{"stun:stun.l.google.com:19302",
+		"stun:stun1.l.google.com:19302",
+		"stun:stun2.l.google.com:19302",
+		"stun:stun3.l.google.com:19302",
+		"stun:stun4.l.google.com:19302",
+	}
+
+	if additionalStunServer != "" {
+		stunURLs = append(stunURLs, additionalStunServer)
+	}
+
 	config := webrtc.Configuration{
 		ICETransportPolicy: webrtc.ICETransportPolicyAll,
 		ICEServers: []webrtc.ICEServer{
 			{
-				URLs: []string{"stun:stun.l.google.com:19302"},
+				URLs: stunURLs,
 			},
 		},
 	}
