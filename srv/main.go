@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -10,7 +11,6 @@ import (
 
 	"log/slog"
 	"net/http"
-	"os"
 )
 
 var upgrader = websocket.Upgrader{
@@ -39,8 +39,11 @@ func wsUpgrade(w http.ResponseWriter, r *http.Request) {
 	go p.handleConnection()
 }
 
+//go:embed wordlist.json
+var wordlistFile embed.FS
+
 func GetNumberOfWords(num int) (string, error) {
-	data, err := os.ReadFile("wordlist.json")
+	data, err := wordlistFile.ReadFile("wordlist.json")
 	if err != nil {
 		return "", fmt.Errorf("error readint wordlist file %v", err.Error())
 	}
