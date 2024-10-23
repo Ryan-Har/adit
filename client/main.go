@@ -33,6 +33,7 @@ func main() {
 	endWG.Add(1)
 	establishConnection(flags, &endWG)
 	endWG.Wait()
+	os.Exit(0)
 }
 
 func establishConnection(flags *Flags, endWG *sync.WaitGroup) {
