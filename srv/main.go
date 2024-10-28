@@ -63,8 +63,14 @@ func GetNumberOfWords(num int) (string, error) {
 
 }
 
+func healthCheck(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
 func main() {
 	http.HandleFunc("/ws", wsUpgrade)
+	http.HandleFunc("/health", healthCheck)
 	fmt.Println("Server listening on port 8080")
 	http.ListenAndServe(":8080", nil)
 }

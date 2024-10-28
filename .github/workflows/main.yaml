@@ -1,0 +1,76 @@
+name: Build, Push to ECR, and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - closed
+      - reopened
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:latest
+        options: --privileged
+
+    env:
+      WORKING_DIR: ${{ github.workspace }}
+      REPO_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials (on checkout)
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ secrets.AWS_REGION }}
+
+      - name: Build Docker container for srv
+        run: |
+          sudo docker build -f docker/srv_test.dockerfile -t ${{ env.REPO_NAME }}/adit_srv:latest .
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+      - name: Tag Docker image with ECR repository URI
+        run: |
+          sudo docker tag ${{ env.REPO_NAME }}/adit_srv:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/ryan-har/adit_srv:latest
+
+      - name: Push Docker image to Amazon ECR
+        run: |
+          sudo docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/ryan-har/adit_srv:latest
+
+      - name: Get latest certificate arn
+        id: get_acm_arn
+        run: |
+          CERTIFICATE_ARNS=$(aws acm list-certificates --include keyTypes=RSA_2048,EC_prime256v1 --query "CertificateSummaryList[*].CertificateArn" --output text)
+          for ARN in $CERTIFICATE_ARNS; do
+            CERTIFICATE_INFO=$(aws acm describe-certificate --certificate-arn $ARN)
+            DOMAIN_NAME=$(echo "$CERTIFICATE_INFO" | jq -r '.Certificate.DomainName')
+            LATEST=$(aws acm list-tags-for-certificate --certificate-arn $ARN | jq -r '.Tags[] | select(.Key == "'"latest"'") | .Value')
+
+            # Check if the domain and tag match
+            if [[ "$DOMAIN_NAME" == "*.rharris.dev" && "$LATEST" == "true" ]]; then
+                echo "CERTIFICATE_ARN=$ARN" >> $GITHUB_ENV
+                break
+            fi
+          done
+
+      - name: terraform init and plan
+        env:
+          TF_VAR_certificate_arn: ${{ env.CERTIFICATE_ARN }}
+          TF_VAR_ecr_image_uri: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/ryan-har/adit_srv:latest
+          TF_TOKEN_app_terraform_io: ${{ secrets.TERRAFORM_API_TOKEN }}
+        run: |
+          cd terraform
+          terraform init
+          terraform apply -auto-approve

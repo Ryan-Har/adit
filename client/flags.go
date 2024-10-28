@@ -30,7 +30,7 @@ func GetFlags() (*Flags, error) {
 	flag.StringVar(&flags.OutputPath, "o", "", "Output path of the received file")
 	flag.StringVar(&flags.OutputFileName, "f", "", "Output file name")
 	flag.StringVar(&flags.AdditionalStunServer, "s", "", "Stun server")
-	server := flag.String("r", "ws://localhost:8080/ws", "server used to relay messages")
+	server := flag.String("r", "wss://adit.rharris.dev/ws", "server used to relay messages")
 	verbose := flag.Bool("vvv", false, "Enable verbose mode")
 	flag.Parse()
 

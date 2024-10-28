@@ -1,0 +1,44 @@
+name: integration test
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:latest
+        options: --privileged
+
+    env:
+      WORKING_DIR: ${{ github.workspace }}
+      REPO_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Build Docker container for srv
+        run: |
+          sudo docker build -f docker/srv_test.dockerfile -t adit_srv .
+
+      - name: Run docker container for srv
+        run: |
+          sudo docker run --rm -d -p 8080:8080 adit_srv
+
+      - name: Run test script
+        run: |
+          chmod +x ./test/client_test.sh
+          sudo ./test/client_test.sh
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ./test/100mb.file ./test/adit-client ./test/pipefile
+          for id in $(sudo docker ps --filter=ancestor=adit_srv:latest --format "{{.ID}}"); do sudo docker stop $id; done
