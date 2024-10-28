@@ -12,7 +12,7 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  build-and-deploy-server:
     runs-on: ubuntu-latest
     services:
       docker:
@@ -74,3 +74,120 @@ jobs:
           cd terraform
           terraform init
           terraform apply -auto-approve
+  
+  build-and-deploy-client:
+    runs-on: ubuntu-latest
+
+    env:
+      WORKING_DIR: ${{ github.workspace }}
+      REPO_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Git with GitHub token
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # Use GITHUB_TOKEN to authenticate pushes
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22.3'
+
+      - name: Build for multiple platforms
+        run: |
+          mkdir -p dist
+          cd ./client
+          platforms=("linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64" "windows/amd64")
+          for platform in "${platforms[@]}"; do
+            os=${platform%/*}
+            arch=${platform#*/}
+            output="../dist/client-${os}-${arch}"
+            if [ "$os" = "windows" ]; then
+              output="${output}.exe"
+            fi
+            GOOS=$os GOARCH=$arch go build -o "$output" .
+          done
+          cd ${{ env.WORKING_DIR }}
+          ls dist
+
+      - name: Determine Last Version Released
+        id: last_version
+        run: |
+          # Fetch tags to get the latest version tag
+          git fetch --tags
+          # Find the latest tag matching the semantic version pattern
+          LAST_TAG=$(git tag --list --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          # Default to v0.0.0 if no previous tags are found
+          echo "last_version=${LAST_TAG:-v0.0.0}" >> $GITHUB_ENV
+
+      - name: Determine Next Version
+        id: next_version
+        run: |
+          LAST_VERSION="${{ env.last_version }}"
+          echo "Last version: $LAST_VERSION"
+          # Separate last version into major, minor, patch
+          major=$(echo "$LAST_VERSION" | cut -d. -f1 | sed 's/v//')
+          minor=$(echo "$LAST_VERSION" | cut -d. -f2)
+          patch=$(echo "$LAST_VERSION" | cut -d. -f3)
+          
+          # Determine the bump type based on commit messages
+          bump="patch"
+          # Fetch commit messages since the last tag
+          commits=$(git log "${LAST_VERSION}..HEAD" --pretty=format:"%s")
+          echo "Commits: $commits"
+
+          for commit in $commits; do
+            if [[ $commit == *"BREAKING CHANGE"* ]]; then
+              bump="major"
+              break
+            elif [[ $commit == feat:* ]]; then
+              bump="minor"
+            elif [[ $commit == fix:* && $bump != "minor" ]]; then
+              bump="patch"
+            fi
+          done
+
+          # Bump version accordingly
+          if [ "$bump" = "major" ]; then
+            major=$((major + 1))
+            minor=0
+            patch=0
+          elif [ "$bump" = "minor" ]; then
+            minor=$((minor + 1))
+            patch=0
+          else
+            patch=$((patch + 1))
+          fi
+
+          NEXT_VERSION="v$major.$minor.$patch"
+          echo "next_version=$NEXT_VERSION" >> $GITHUB_ENV
+          echo "Next version: $NEXT_VERSION"
+      
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: "${{ env.next_version }}"
+          release_name: "Client Release ${{ env.next_version }}"
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        run: |
+          for asset in myprogram/build/*; do
+            echo "Uploading $asset"
+            curl -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$asset" \
+              "${{ steps.create_release.outputs.upload_url }}"?name="$(basename "$asset")"
+          done
