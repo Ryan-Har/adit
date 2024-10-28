@@ -185,9 +185,12 @@ jobs:
         run: |
           for asset in dist/*; do
             echo "Uploading $asset"
+            # Clean the upload URL by stripping out {?name,label}
+            UPLOAD_URL="${{ steps.create_release.outputs.upload_url }}";
+            CLEAN_URL="${UPLOAD_URL%\{?name,label\}}"
             curl -X POST \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Content-Type: application/octet-stream" \
               --data-binary @"$asset" \
-              "${{ steps.create_release.outputs.upload_url }}"?name="$(basename "$asset")"
+              "${CLEAN_URL}?name=$(basename "$asset")"
           done
