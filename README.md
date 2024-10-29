@@ -20,7 +20,7 @@ A command-line interface (CLI) tool built with Go that enables users to securely
 To install the tool on Linux or macOS, run the following command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YourGitHubUsername/YourProjectName/main/install/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Ryan-Har/adit/main/install/install.sh | sudo bash
 ```
 
 #### Windows
@@ -28,7 +28,7 @@ curl -sSL https://raw.githubusercontent.com/YourGitHubUsername/YourProjectName/m
 To install the tool on windows, run the following commands within an elevated powershell prompt:
 
 ```powershell
-iex "& { $(iwr -useb "https://raw.githubusercontent.com/YourGitHubUsername/YourProjectName/main/install/install.ps1") }"
+iex "& { $(iwr -useb https://raw.githubusercontent.com/Ryan-Har/adit/main/install/install.ps1) }"
 ```
 
 ## Usage
