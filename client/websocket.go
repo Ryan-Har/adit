@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"time"
 
 	"encoding/base64"
 
@@ -89,6 +90,27 @@ func (s *Socket) ping() error {
 	return nil
 }
 
+func (s *Socket) keepAlive() {
+	msg := &Message{
+		MessageType: "ping",
+	}
+	jsonBytes, err := json.Marshal(msg)
+	if err != nil {
+		slog.Error(err.Error())
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		err := s.WriteMessage(websocket.TextMessage, jsonBytes)
+		if err != nil {
+			slog.Error("error sending keepalive message to websocket server")
+		} else {
+			slog.Info("successfully sent keepalive to websocket server")
+		}
+	}
+}
+
 func (s *Socket) SendWebrtcSessionDescription(sdp *webrtc.SessionDescription) error {
 	msg := &Message{
 		MessageType: sdp.Type.String(),
@@ -144,7 +166,6 @@ func (s *Socket) GetOffer() error {
 	return nil
 }
 
-// TODO: fix panic that happens if server is unavailable / socket connection isnt open
 func (s *Socket) HandleIncomingMessages(peerConn *WebrtcConn) {
 	for {
 		_, receivedMessage, err := s.ReadMessage()
@@ -193,6 +214,8 @@ func (s *Socket) HandleIncomingMessages(peerConn *WebrtcConn) {
 			peerConn.AddICECandidate(*candidate)
 		case "error":
 			slog.Error("error occured when establising connection to peer, please try again")
+		case "pong":
+			slog.Info("keepalive successful")
 		}
 	}
 }
