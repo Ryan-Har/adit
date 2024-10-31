@@ -58,6 +58,7 @@ func establishConnection(flags *Flags, endWG *sync.WaitGroup) {
 		slog.Error("unable to initialise websocket connection", "error", err.Error())
 		os.Exit(2)
 	}
+	go ws.keepAlive()
 
 	rtc, err := CreatePeerConnection(flags.AdditionalStunServer)
 	if err != nil {
